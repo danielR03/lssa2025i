@@ -190,8 +190,8 @@ def generate_docker_compose(components):
                 f.write(f"    build: ./{name}\n")
                 f.write(f"    ports:\n      - '{port}:80'\n")
                 if ctype == "backend":
-                    f.write(f"    depends_on:\n      - {db}\n")                    
-                    
+                    f.write(f"    depends_on:\n      - {db}\n")
+                                       
         f.write("\nnetworks:\n  default:\n    driver: bridge\n")
 
 def apply_transformations(model):
