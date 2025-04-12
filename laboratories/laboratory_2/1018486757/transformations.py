@@ -97,7 +97,7 @@ def generate_frontend(name, backend):
             app.use(express.json());
             app.use(express.urlencoded({{ extended: true }}));
 
-            const BACKEND_URL = 'http://{backend}:80';
+            const BACKEND_URL = 'http://{backend}';
 
             app.get('/', async (req, res) => {{
                 try {{
@@ -130,6 +130,42 @@ def generate_frontend(name, backend):
             app.listen(80, () => console.log("Frontend running on port 80"));
         """))
 
+def generate_load_balancer(name, backend):
+    path = f'skeleton/{name}'
+    os.makedirs(path, exist_ok=True)
+
+    with open(os.path.join(path, 'Dockerfile'), 'w') as f:
+        f.write(textwrap.dedent("""
+            FROM nginx:latest
+            COPY nginx.conf /etc/nginx/nginx.conf
+            EXPOSE 80
+        """))    
+    with open(os.path.join(path, 'nginx.conf'), 'w') as f:
+        f.write(textwrap.dedent(f"""
+            events {{
+            }}
+
+            http {{
+                upstream backend {{
+                    server {backend};
+                }}
+
+                server {{
+                    listen 80;
+
+                    location / {{
+                        proxy_pass http://backend;
+                        proxy_set_header Host $host;
+                        proxy_set_header X-Real-IP $remote_addr;
+                        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                        proxy_connect_timeout 10s;
+                        proxy_read_timeout 30s;
+                        proxy_send_timeout 30s;
+                    }}
+                }}
+            }}
+        """))
+
 def generate_docker_compose(components):
     path = 'skeleton/'
     os.makedirs(path, exist_ok=True)
@@ -154,7 +190,7 @@ def generate_docker_compose(components):
                 f.write(f"    build: ./{name}\n")
                 f.write(f"    ports:\n      - '{port}:80'\n")
                 if ctype == "backend":
-                    f.write(f"    depends_on:\n      - {db}\n")
+                    f.write(f"    depends_on:\n      - {db}\n")                    
                     
         f.write("\nnetworks:\n  default:\n    driver: bridge\n")
 
@@ -162,12 +198,15 @@ def apply_transformations(model):
     components = {}
     backend_name = None
     database_name = None
+    load_balancer_name = None
     for e in model.elements:
         if e.__class__.__name__ == 'Component':
             if e.type == 'backend':
                 backend_name = e.name
             elif e.type == 'database':
                 database_name = e.name
+            elif e.type == 'load_balancer':
+                load_balancer_name = e.name
     for e in model.elements:
         if e.__class__.__name__ == 'Component':
             components[e.name] = e.type
@@ -176,5 +215,7 @@ def apply_transformations(model):
             if e.type == 'backend':
                 generate_backend(e.name, database=database_name)
             elif e.type == 'frontend':
-                generate_frontend(e.name, backend=backend_name)
+                generate_frontend(e.name, backend=load_balancer_name)
+            elif e.type == 'load_balancer':
+                generate_load_balancer(e.name, backend=backend_name)
     generate_docker_compose(components)
